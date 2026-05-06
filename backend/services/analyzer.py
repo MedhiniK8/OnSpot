@@ -45,6 +45,7 @@ def _default_analysis(cnn_result: dict, location: str | None) -> dict:
         "departments_to_call": departments,
         "voice_script": voice_script,
         "confidence": float(cnn_result.get("confidence", 0.5)),
+        "severity_confidence": 0.85,
         "reasoning": "Fallback heuristic analysis used because the LLM was unavailable.",
         "recommended_action": "Dispatch emergency response teams and monitor the scene.",
     }
@@ -55,7 +56,7 @@ def _json_prompt(location: str | None, cnn_result: dict) -> str:
         "You are an AI emergency response system for OnSpot. "
         f"Location: {location or 'unknown'}. "
         f"CNN result: {json.dumps(cnn_result, ensure_ascii=False)}. "
-        "Return ONLY a JSON object with keys severity, accident_type, departments_to_call, voice_script, confidence, reasoning, recommended_action. "
+        "Return ONLY a JSON object with keys severity, accident_type, departments_to_call, voice_script, confidence, severity_confidence, reasoning, recommended_action. "
         "The voice_script must sound like a real emergency call and be 25-30 seconds long. "
         "Return ONLY a JSON object. No explanation. No markdown. No backticks."
     )
@@ -72,6 +73,7 @@ def _parse_analysis(text: str, fallback: dict) -> dict:
             "departments_to_call",
             "voice_script",
             "confidence",
+            "severity_confidence",
             "reasoning",
             "recommended_action",
         }

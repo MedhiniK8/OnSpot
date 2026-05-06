@@ -82,6 +82,11 @@ export interface ApiEvent {
   ai_decision: string | null;
   status: string;
   response_time_ms: number | null;
+  training_metadata?: {
+    detection_confidence: number;
+    severity_confidence: number;
+    overall_confidence: number;
+  };
   created_at: string | null;
 }
 

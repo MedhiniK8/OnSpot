@@ -175,6 +175,64 @@ export default function EventsPage() {
             </span>
           </div>
         </motion.div>
+
+        {/* AI Training Dataset Section */}
+        {filtered.some(e => e.training_metadata) && (
+          <motion.div className="card" style={{ marginTop: 24, padding: "24px 20px" }}
+            initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, color: "#111827", marginBottom: 6 }}>AI Training Dataset (Live)</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 20 }}>Continuously growing dataset from user reports for model adaptation.</p>
+            
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+              {filtered.filter(e => e.training_metadata).map((evt) => (
+                <div key={`train-${evt.id}`} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 16, background: "#f9fafb" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#374151", textTransform: "uppercase" }}>{evt.input_type} Input</span>
+                    <span style={{ fontSize: 11, color: "#9ca3af" }}>{evt.created_at ? new Date(evt.created_at).toLocaleString() : "—"}</span>
+                  </div>
+                  
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "#6b7280" }}>Prediction Result:</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: "#111827", textTransform: "capitalize" }}>{evt.accident_type}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "#6b7280" }}>Severity:</span>
+                      <span className={`badge ${SEVERITY_BADGE[evt.severity] ?? "badge-gray"}`}>{evt.severity}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 13, color: "#6b7280" }}>Action Taken:</span>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: "#111827", textTransform: "capitalize" }}>
+                        {evt.departments_alerted.length > 0 ? evt.departments_alerted.join(", ") : "None"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, color: "#4b5563" }}>Detection Confidence:</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#16a34a" }}>
+                        {evt.training_metadata?.detection_confidence ? `${(evt.training_metadata.detection_confidence * 100).toFixed(0)}%` : "—"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 12, color: "#4b5563" }}>Severity Confidence:</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "#16a34a" }}>
+                        {evt.training_metadata?.severity_confidence ? `${(evt.training_metadata.severity_confidence * 100).toFixed(0)}%` : "—"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>Overall AI Confidence:</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>
+                        {evt.training_metadata?.overall_confidence ? `${(evt.training_metadata.overall_confidence * 100).toFixed(0)}%` : "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
       </div>
     </>
   );

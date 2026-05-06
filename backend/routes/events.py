@@ -32,6 +32,7 @@ def _event_to_read(event: Event) -> EventRead:
         ai_decision=event.ai_decision,
         status=event.status,
         response_time_ms=event.response_time_ms,
+        training_metadata=event.training_metadata,
         created_at=event.created_at,
     )
 

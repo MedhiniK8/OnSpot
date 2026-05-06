@@ -33,6 +33,7 @@ class EventRead(BaseModel):
     ai_decision: str | None = None
     status: str
     response_time_ms: int | None = None
+    training_metadata: dict | None = None
     created_at: datetime | None = None
 
 

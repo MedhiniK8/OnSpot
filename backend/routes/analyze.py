@@ -65,6 +65,8 @@ def _analyze_text_payload(text: str) -> dict:
             f"Severity level is {severity}. "
             "Please dispatch response teams immediately."
         ),
+        "confidence": 0.90,
+        "severity_confidence": 0.85,
         "reasoning": "Rule-based text analysis",
         "recommended_action": "Dispatch departments and monitor event",
     }
@@ -133,6 +135,11 @@ async def analyze_input(
             ai_decision=analysis.get("reasoning", "Analysis completed"),
             status="completed",
             response_time_ms=response_time_ms,
+            training_metadata={
+                "detection_confidence": analysis.get("confidence", 0.0),
+                "severity_confidence": analysis.get("severity_confidence", 0.0),
+                "overall_confidence": round((analysis.get("confidence", 0.0) + analysis.get("severity_confidence", 0.0)) / 2, 2)
+            }
         )
         db.add(event)
         await db.flush()

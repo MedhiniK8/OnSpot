@@ -36,7 +36,7 @@ ADMIN_EMAILS = [
     for email in os.getenv("ADMIN_EMAILS", "admin@onspot.com").split(",")
     if email.strip()
 ]
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+BASE_URL = os.getenv("BASE_URL", "https://sharpness-snowstorm-helmet.ngrok-free.dev")
 
 
 def ensure_runtime_directories() -> None:

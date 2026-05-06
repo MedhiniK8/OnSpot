@@ -57,6 +57,7 @@ class Event(Base):
         default="ongoing",
     )
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    training_metadata: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     user: Mapped[User | None] = relationship(back_populates="events")
