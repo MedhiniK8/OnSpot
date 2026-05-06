@@ -13,7 +13,7 @@ const WAYPOINTS = [
 ];
 
 type LightState = "red" | "green";
-type Journey    = "idle" | "forward" | "waiting" | "arrived" | "return" | "complete";
+type Journey    = "idle" | "outbound" | "arrived" | "return" | "complete";
 
 const ROAD_PATH =
   `M ${WAYPOINTS[0].x},${WAYPOINTS[0].y} ` +
@@ -71,76 +71,55 @@ export default function SimulationPage() {
   /* ── Core movement engine ── */
   const moveStep = useCallback((
     currentIdx: number,
-    direction: "forward" | "return"
+    direction: "outbound" | "return"
   ) => {
     if (!running.current) return;
 
-    const nextIdx = direction === "forward" ? currentIdx + 1 : currentIdx - 1;
-    const atEnd   = direction === "forward"
-      ? nextIdx >= WAYPOINTS.length
-      : nextIdx < 0;
+    const nextIdx = direction === "outbound" ? currentIdx - 1 : currentIdx + 1;
+    const atEnd   = direction === "outbound" ? nextIdx < 0 : nextIdx >= WAYPOINTS.length;
 
     if (atEnd) {
-      if (direction === "forward") {
+      if (direction === "outbound") {
         setJourney("arrived");
-        addLog("Ambulance arrived at City Hospital — patient delivered");
+        addLog("Ambulance arrived at Accident Site — loading patient...");
         timerRef.current = setTimeout(() => {
           if (!running.current) return;
-          addLog("Starting return journey to base...");
+          addLog("Patient loaded. Starting return journey to Hospital...");
           setJourney("return");
-          moveStep(WAYPOINTS.length - 1, "return");
+          moveStep(0, "return");
         }, PAUSE_MS);
       } else {
         setJourney("complete");
         running.current = false;
-        addLog("Return journey complete — ambulance back at base");
+        addLog("Return journey complete — ambulance safely back at Hospital");
       }
       return;
     }
 
     const nextWP = WAYPOINTS[nextIdx];
 
-    /* If next waypoint is a signal, turn it GREEN and wait before moving */
+    /* If next waypoint is a signal, turn it GREEN preemptively */
     if (nextWP.type === "signal" && nextWP.signalId) {
       const sid = nextWP.signalId;
-      const currentLight = lightRef.current[sid];
-
-      if (currentLight === "red") {
-        setJourney("waiting");
-        addLog(`Ambulance waiting — Signal ${sid} is RED`);
-
-        /* Turn signal GREEN after a brief pause (1s) to make it visible */
-        timerRef.current = setTimeout(() => {
-          if (!running.current) return;
-          setLightsSynced({ ...lightRef.current, [sid]: "green" });
-          addLog(`Signal ${sid} → GREEN — ambulance proceeding`);
-          setJourney(direction === "forward" ? "forward" : "return");
-
-          /* Now move to that waypoint */
-          timerRef.current = setTimeout(() => {
-            if (!running.current) return;
-            setAmbulanceIdx(nextIdx);
-            addLog(`Ambulance at: ${nextWP.label}`);
-
-            /* Turn signal RED after ambulance passes */
-            timerRef.current = setTimeout(() => {
-              if (!running.current) return;
-              setLightsSynced({ ...lightRef.current, [sid]: "red" });
-              addLog(`Signal ${sid} → RED (ambulance passed)`);
-              moveStep(nextIdx, direction);
-            }, GREEN_HOLD);
-          }, TRAVEL_MS);
-        }, 1000);
-        return;
-      }
-      /* Signal already green — move immediately */
+      setLightsSynced({ ...lightRef.current, [sid]: "green" });
+      addLog(`Green Corridor active: Signal ${sid} is GREEN for approaching ambulance`);
     }
 
-    /* No signal — just travel */
+    setAmbulanceIdx(nextIdx);
+    addLog(`Ambulance en route to: ${nextWP.label}`);
+
     timerRef.current = setTimeout(() => {
       if (!running.current) return;
-      setAmbulanceIdx(nextIdx);
-      addLog(`Ambulance at: ${nextWP.label}`);
+      
+      addLog(`Ambulance reached: ${nextWP.label}`);
+      
+      /* Turn signal RED after ambulance passes */
+      if (nextWP.type === "signal" && nextWP.signalId) {
+        const sid = nextWP.signalId;
+        setLightsSynced({ ...lightRef.current, [sid]: "red" });
+        addLog(`Ambulance passed Signal ${sid} → reverting to RED`);
+      }
+
       moveStep(nextIdx, direction);
     }, TRAVEL_MS);
   }, []);
@@ -151,18 +130,18 @@ export default function SimulationPage() {
     running.current = true;
     const initLights = { A: "red", B: "red", C: "red" } as Record<string, LightState>;
     setLightsSynced(initLights);
-    setAmbulanceIdx(0);
+    setAmbulanceIdx(WAYPOINTS.length - 1);
     setInfoLog([]);
-    setJourney("forward");
-    addLog("Simulation started — ambulance dispatched from accident site");
-    moveStep(0, "forward");
+    setJourney("outbound");
+    addLog("Simulation started — ambulance dispatched from Hospital to Accident Site");
+    moveStep(WAYPOINTS.length - 1, "outbound");
   }
 
   function resetSimulation() {
     clearTimer();
     running.current = false;
     setJourney("idle");
-    setAmbulanceIdx(0);
+    setAmbulanceIdx(WAYPOINTS.length - 1);
     const reset = { A: "red", B: "red", C: "red" } as Record<string, LightState>;
     setLightsSynced(reset);
     setInfoLog([]);
@@ -174,11 +153,14 @@ export default function SimulationPage() {
   const totalSteps = (WAYPOINTS.length - 1) * 2;
   const progress = (() => {
     if (journey === "idle") return 0;
-    if (journey === "forward" || journey === "waiting" || journey === "arrived") {
-      return Math.round((ambulanceIdx / totalSteps) * 100);
+    if (journey === "outbound") {
+      return Math.round(((WAYPOINTS.length - 1 - ambulanceIdx) / totalSteps) * 100);
+    }
+    if (journey === "arrived") {
+      return 50;
     }
     if (journey === "return" || journey === "complete") {
-      const returnSteps = (WAYPOINTS.length - 1) + (WAYPOINTS.length - 1 - ambulanceIdx);
+      const returnSteps = (WAYPOINTS.length - 1) + ambulanceIdx;
       return Math.min(100, Math.round((returnSteps / totalSteps) * 100));
     }
     return 100;
@@ -188,15 +170,14 @@ export default function SimulationPage() {
   const isActive = journey !== "idle" && journey !== "complete";
   const statusMsg =
     journey === "idle"    ? "Simulation ready. Press Start to begin." :
-    journey === "waiting" ? `Ambulance STOPPED — waiting for signal to turn GREEN` :
-    journey === "forward" ? `Ambulance en route — currently at ${amb.label}` :
-    journey === "arrived" ? "Ambulance arrived at hospital. Preparing return journey..." :
-    journey === "return"  ? `Returning to base — currently at ${amb.label}` :
-                            "Simulation complete. Ambulance back at base.";
+    journey === "outbound" ? `Ambulance en route to accident — currently near ${amb.label}` :
+    journey === "arrived" ? "Ambulance arrived at accident. Loading patient..." :
+    journey === "return"  ? `Returning to hospital — currently near ${amb.label}` :
+                            "Simulation complete. Ambulance back at hospital.";
 
-  const statusBg     = journey === "complete" ? "#f0fdf4" : journey === "waiting" ? "#fffbeb" : journey === "idle" ? "#f8f9fa" : "#eff6ff";
-  const statusBorder = journey === "complete" ? "#bbf7d0" : journey === "waiting" ? "#fde68a" : journey === "idle" ? "#e5e7eb"  : "#bfdbfe";
-  const statusColor  = journey === "complete" ? "#166534" : journey === "waiting" ? "#92400e" : journey === "idle" ? "#374151"  : "#1d4ed8";
+  const statusBg     = journey === "complete" ? "#f0fdf4" : journey === "idle" ? "#f8f9fa" : "#eff6ff";
+  const statusBorder = journey === "complete" ? "#bbf7d0" : journey === "idle" ? "#e5e7eb"  : "#bfdbfe";
+  const statusColor  = journey === "complete" ? "#166534" : journey === "idle" ? "#374151"  : "#1d4ed8";
 
   return (
     <>
@@ -225,7 +206,7 @@ export default function SimulationPage() {
         }}>
           {isActive && journey !== "arrived" && (
             <div style={{ width: 10, height: 10, borderRadius: "50%",
-              background: journey === "waiting" ? "#d97706" : "#2563eb",
+              background: "#2563eb",
               animation: "pulse-ring 1.2s ease-in-out infinite", flexShrink: 0 }} />
           )}
           {journey === "complete" && (
@@ -238,7 +219,7 @@ export default function SimulationPage() {
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 120, height: 5, background: "#e5e7eb", borderRadius: 3, overflow: "hidden" }}>
                 <div style={{ width: `${progress}%`, height: "100%",
-                  background: journey === "complete" ? "#16a34a" : journey === "waiting" ? "#d97706" : "#2563eb",
+                  background: journey === "complete" ? "#16a34a" : "#2563eb",
                   borderRadius: 3, transition: "width 0.5s ease" }} />
               </div>
               <span style={{ fontSize: 12, color: statusColor, fontWeight: 500 }}>{progress}%</span>
@@ -312,7 +293,7 @@ export default function SimulationPage() {
                 {/* Ambulance — CSS transition moves it smoothly */}
                 <g style={{
                   transform: `translate(${amb.x}px, ${amb.y}px)`,
-                  transition: journey === "waiting" ? "none" : `transform ${TRAVEL_MS * 0.85}ms ease-in-out`,
+                  transition: `transform ${TRAVEL_MS * 0.85}ms ease-in-out`,
                 }}>
                   <rect x="-16" y="-10" width="32" height="20" rx="4" fill="#16a34a" />
                   <rect x="-14" y="-8"  width="28" height="16" rx="3" fill="#dcfce7" />
@@ -356,10 +337,9 @@ export default function SimulationPage() {
                   { label: "Signal B",          value: lights.B.toUpperCase() },
                   { label: "Signal C",          value: lights.C.toUpperCase() },
                   { label: "Action",            value: journey === "idle"    ? "Standby"
-                                                      : journey === "waiting" ? "Stopped at RED signal"
-                                                      : journey === "forward" ? "En route to hospital"
-                                                      : journey === "arrived" ? "Patient delivered"
-                                                      : journey === "return"  ? "Returning to base"
+                                                      : journey === "outbound" ? "En route to accident"
+                                                      : journey === "arrived" ? "Loading patient"
+                                                      : journey === "return"  ? "Returning to hospital"
                                                       : "Mission complete" },
                   { label: "Route Progress",   value: `${progress}%` },
                 ].map(({ label, value }) => (
@@ -369,7 +349,6 @@ export default function SimulationPage() {
                       fontSize: 12, fontWeight: 600,
                       color: value === "GREEN" ? "#16a34a"
                            : value === "RED"   ? "#dc2626"
-                           : value === "Stopped at RED signal" ? "#d97706"
                            : "#111827",
                     }}>{value}</span>
                   </div>
@@ -411,9 +390,9 @@ export default function SimulationPage() {
               </div>
               <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
                 {[
-                  { key: "forward",  label: "Forward — Accident to Hospital", done: ["forward","waiting","arrived","return","complete"].includes(journey) },
-                  { key: "arrived",  label: "Patient Delivered at Hospital",   done: ["arrived","return","complete"].includes(journey) },
-                  { key: "return",   label: "Return — Hospital to Base",       done: ["return","complete"].includes(journey) },
+                  { key: "outbound", label: "Outbound — Hospital to Accident", done: ["outbound","arrived","return","complete"].includes(journey) },
+                  { key: "arrived",  label: "Patient Loaded at Accident Site", done: ["arrived","return","complete"].includes(journey) },
+                  { key: "return",   label: "Return — Accident to Hospital",   done: ["return","complete"].includes(journey) },
                   { key: "complete", label: "Mission Complete",                done: journey === "complete" },
                 ].map((phase) => (
                   <div key={phase.key} style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -460,7 +439,7 @@ export default function SimulationPage() {
                 <div key={i} style={{
                   padding: "4px 0",
                   borderBottom: "1px solid var(--border-subtle)",
-                  color: i === 0 ? (entry.includes("STOP") || entry.includes("waiting") || entry.includes("RED") ? "#d97706" : "#1d4ed8") : "#6b7280",
+                  color: i === 0 ? (entry.includes("RED") ? "#d97706" : "#1d4ed8") : "#6b7280",
                 }}>
                   {entry}
                 </div>
