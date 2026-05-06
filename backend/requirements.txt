@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+SQLAlchemy
+psycopg2-binary
+asyncpg
+alembic
+python-dotenv
+groq
+elevenlabs
+twilio
+opencv-python
+ultralytics
+httpx
+pydantic[email]
