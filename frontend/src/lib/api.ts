@@ -4,7 +4,7 @@
  * JWT token is read from localStorage (set during login/register)
  */
 
-const BASE = "http://127.0.0.1:8000";
+const BASE = process.env.NODE_ENV === "production" ? "/api" : "http://127.0.0.1:8000";
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 export function getToken(): string | null {
