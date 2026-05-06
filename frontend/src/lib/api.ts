@@ -176,3 +176,26 @@ export async function apiAnalyzeVoice(
   }
   return res.json();
 }
+
+export async function apiAnalyzeUnified(data: {
+  location: string;
+  incidentType: string;
+  description: string;
+  voiceTranscript: string;
+  imageFile: File | null;
+}): Promise<AnalyzeResult> {
+  // If there's an image, send as image, combining text into location so Groq sees it
+  if (data.imageFile) {
+    const combinedLocation = `${data.location ? `Location: ${data.location} | ` : ''}Type: ${data.incidentType} | Desc: ${data.description}${data.voiceTranscript ? ` | Voice: ${data.voiceTranscript}` : ''}`;
+    return apiAnalyzeImage(data.imageFile, combinedLocation);
+  }
+  
+  // If no image but there's voice
+  if (data.voiceTranscript) {
+    const combinedLocation = `${data.location ? `Location: ${data.location} | ` : ''}Type: ${data.incidentType} | Desc: ${data.description}`;
+    return apiAnalyzeVoice(data.voiceTranscript, combinedLocation);
+  }
+
+  // If only text
+  return apiAnalyzeText(data.location, data.incidentType, data.description);
+}

@@ -3,10 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { getUser, type AuthUser } from "@/lib/auth";
-import { apiAnalyzeText, apiAnalyzeImage, apiAnalyzeVoice, apiGetEvents, type ApiEvent } from "@/lib/api";
-
-const TABS = ["Text", "Image", "Voice", "Camera"] as const;
-type Tab = typeof TABS[number];
+import { apiAnalyzeUnified, apiGetEvents, type ApiEvent } from "@/lib/api";
 
 const SEVERITY_BADGE: Record<string, string> = {
   High: "badge-red", Medium: "badge-yellow", Low: "badge-gray",
@@ -19,7 +16,6 @@ const STATUS_BADGE: Record<string, string> = {
 const fadeUp = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.3 } };
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("Text");
   const [textInput, setTextInput] = useState("");
   const [locationInput, setLocationInput] = useState("");
   const [incidentType, setIncidentType] = useState("Vehicle Accident");
@@ -40,6 +36,8 @@ export default function DashboardPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const hasInput = !!(textInput.trim() || imageFile || capturedFile || voiceTranscript.trim());
+
   useEffect(() => {
     setUser(getUser());
     fetchMyEvents();
@@ -57,27 +55,6 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleTextSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!textInput.trim()) return;
-    setSubmitting(true);
-    setSubmitResult(null);
-    try {
-      const result = await apiAnalyzeText(locationInput, incidentType, textInput);
-      setSubmitResult({
-        ok: true,
-        msg: `Report submitted — Severity: ${result.decision_result.severity} | Departments: ${result.decision_result.departments_alerted.join(", ")}`,
-      });
-      setTextInput("");
-      setLocationInput("");
-      await fetchMyEvents(); // refresh history
-    } catch (err) {
-      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "Submission failed" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -87,61 +64,39 @@ export default function DashboardPage() {
     reader.readAsDataURL(file);
   }
 
-  async function handleImageSubmit() {
-    if (!imageFile) return;
+  async function handleUnifiedSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!hasInput) return;
     setSubmitting(true);
     setSubmitResult(null);
+
     try {
-      const result = await apiAnalyzeImage(imageFile, locationInput || undefined);
+      const result = await apiAnalyzeUnified({
+        location: locationInput,
+        incidentType,
+        description: textInput,
+        voiceTranscript,
+        imageFile: capturedFile || imageFile,
+      });
+
       setSubmitResult({
         ok: true,
-        msg: `Image analyzed — Severity: ${result.decision_result.severity} | Departments: ${result.decision_result.departments_alerted.join(", ")}`,
+        msg: `Report submitted — Severity: ${result.decision_result.severity} | Departments: ${result.decision_result.departments_alerted.join(", ")}`,
       });
+      
+      // Clear form
+      setTextInput("");
+      setLocationInput("");
+      setVoiceTranscript("");
       setImageFile(null);
       setImagePreview(null);
-      await fetchMyEvents();
-    } catch (err) {
-      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "Image submission failed" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleCameraSubmit() {
-    if (!capturedFile) return;
-    setSubmitting(true);
-    setSubmitResult(null);
-    try {
-      const result = await apiAnalyzeImage(capturedFile, locationInput || undefined);
-      setSubmitResult({
-        ok: true,
-        msg: `Photo analyzed — Severity: ${result.decision_result.severity}`,
-      });
       setCameraCapture(null);
       setCapturedFile(null);
-      await fetchMyEvents();
-    } catch (err) {
-      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "Camera submit failed" });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleVoiceSubmit() {
-    if (!voiceTranscript.trim()) return;
-    setSubmitting(true);
-    setSubmitResult(null);
-    try {
-      const result = await apiAnalyzeVoice(voiceTranscript, locationInput || undefined);
-      setSubmitResult({
-        ok: true,
-        msg: `Voice report analyzed — Severity: ${result.decision_result.severity}`,
-      });
-      setVoiceTranscript("");
       setIsRecording(false);
+
       await fetchMyEvents();
     } catch (err) {
-      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "Voice submit failed" });
+      setSubmitResult({ ok: false, msg: err instanceof Error ? err.message : "Submission failed" });
     } finally {
       setSubmitting(false);
     }
@@ -205,175 +160,106 @@ export default function DashboardPage() {
             <p style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>Submit via text, image, voice, or live camera</p>
           </div>
           <div style={{ padding: 20 }}>
-            <div className="tabs" style={{ marginBottom: 20 }}>
-              {TABS.map((tab) => (
-                <button key={tab} id={`incident-tab-${tab.toLowerCase()}`}
-                  className={`tab ${activeTab === tab ? "active" : ""}`}
-                  onClick={() => { setActiveTab(tab); setSubmitResult(null); }}
-                  style={{ flex: 1, justifyContent: "center" }}>
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* TEXT */}
-            {activeTab === "Text" && (
-              <form onSubmit={handleTextSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                  <div>
-                    <label className="label" htmlFor="incident-location">Location</label>
-                    <input id="incident-location" className="input" placeholder="e.g. MG Road, Brigade Rd"
-                      value={locationInput} onChange={(e) => setLocationInput(e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="label" htmlFor="incident-type">Incident Type</label>
-                    <select id="incident-type" className="input select" style={{ width: "100%" }}
-                      value={incidentType} onChange={(e) => setIncidentType(e.target.value)}>
-                      <option>Vehicle Accident</option><option>Fire</option>
-                      <option>Medical Emergency</option><option>Flood</option><option>Other</option>
-                    </select>
-                  </div>
+            <form onSubmit={handleUnifiedSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <label className="label" htmlFor="incident-location">Location</label>
+                  <input id="incident-location" className="input" placeholder="e.g. MG Road, Brigade Rd"
+                    value={locationInput} onChange={(e) => setLocationInput(e.target.value)} />
                 </div>
                 <div>
-                  <label className="label" htmlFor="incident-desc">Description</label>
-                  <textarea id="incident-desc" className="input" rows={4}
-                    placeholder="Describe what you observed in detail..."
-                    value={textInput} onChange={(e) => setTextInput(e.target.value)}
-                    style={{ resize: "none" }} required />
+                  <label className="label" htmlFor="incident-type">Incident Type</label>
+                  <select id="incident-type" className="input select" style={{ width: "100%" }}
+                    value={incidentType} onChange={(e) => setIncidentType(e.target.value)}>
+                    <option>Vehicle Accident</option><option>Fire</option>
+                    <option>Medical Emergency</option><option>Flood</option><option>Other</option>
+                  </select>
                 </div>
-                {submitResult && (
-                  <div style={{ padding: "10px 14px", background: submitResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${submitResult.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, fontSize: 13, color: submitResult.ok ? "#166534" : "#b91c1c" }}>
-                    {submitResult.msg}
-                  </div>
-                )}
-                <motion.button id="submit-incident-text" type="submit" className="btn btn-primary"
-                  disabled={submitting} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
-                  style={{ alignSelf: "flex-start", padding: "11px 24px" }}>
-                  {submitting ? "Analyzing..." : "Submit Report"}
-                </motion.button>
-              </form>
-            )}
+              </div>
 
-            {/* IMAGE */}
-            {activeTab === "Image" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                <input ref={fileInputRef} id="image-upload-input" type="file" accept="image/*"
-                  style={{ display: "none" }} onChange={handleImageUpload} />
-                {imagePreview ? (
-                  <>
-                    <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+              <div>
+                <label className="label" htmlFor="incident-desc">Description</label>
+                <textarea id="incident-desc" className="input" rows={3}
+                  placeholder="Describe what you observed in detail..."
+                  value={textInput} onChange={(e) => setTextInput(e.target.value)}
+                  style={{ resize: "none" }} />
+              </div>
+
+              {/* Media Section */}
+              <div>
+                <label className="label" style={{ marginBottom: 8 }}>Media Attachments</label>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    Upload Image
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={openCamera} disabled={!!cameraStream || !!cameraCapture}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                    Open Camera
+                  </button>
+                  <button type="button" className={`btn ${isRecording ? "btn-danger" : "btn-secondary"}`} onClick={() => setIsRecording(!isRecording)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    {isRecording ? "Stop Recording" : "Record Voice"}
+                  </button>
+                </div>
+
+                <input ref={fileInputRef} id="image-upload-input" type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageUpload} />
+
+                {/* Previews */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {imagePreview && !cameraCapture && !cameraStream && (
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={imagePreview} alt="Preview" style={{ width: "100%", objectFit: "cover", maxHeight: 260 }} />
+                      <img src={imagePreview} alt="Preview" style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setImagePreview(null); setImageFile(null); }}>Remove Image</button>
                     </div>
-                    {submitResult && (
-                      <div style={{ padding: "10px 14px", background: submitResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${submitResult.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, fontSize: 13, color: submitResult.ok ? "#166534" : "#b91c1c" }}>
-                        {submitResult.msg}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", gap: 10 }}>
-                      <motion.button className="btn btn-primary" whileHover={{ scale: 1.01 }}
-                        disabled={submitting} onClick={handleImageSubmit}>
-                        {submitting ? "Analyzing..." : "Submit for Analysis"}
-                      </motion.button>
-                      <button className="btn btn-secondary" onClick={() => { setImagePreview(null); setImageFile(null); setSubmitResult(null); }}>Clear</button>
-                    </div>
-                  </>
-                ) : (
-                  <button id="upload-image-btn" className="btn btn-secondary"
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{ width: "100%", height: 140, flexDirection: "column", gap: 10, borderStyle: "dashed" }}>
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />
-                    </svg>
-                    <span style={{ fontSize: 14, fontWeight: 500 }}>Click to upload an image</span>
-                    <span style={{ fontSize: 12, color: "#9ca3af" }}>JPG, PNG, WEBP up to 10MB</span>
-                  </button>
-                )}
-              </div>
-            )}
+                  )}
 
-            {/* VOICE */}
-            {activeTab === "Voice" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "12px 0" }}>
-                  <div style={{ width: 72, height: 72, borderRadius: "50%", background: isRecording ? "#fef2f2" : "#f8f9fa", border: `2px solid ${isRecording ? "#fecaca" : "#e5e7eb"}`, display: "flex", alignItems: "center", justifyContent: "center", color: isRecording ? "#dc2626" : "#6b7280" }}>
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                      <path d="M19 10v2a7 7 0 01-14 0v-2" />
-                      <line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-                    </svg>
-                  </div>
-                  <button id="start-voice-btn" className={`btn ${isRecording ? "btn-danger" : "btn-primary"}`}
-                    style={{ minWidth: 160 }} onClick={() => setIsRecording(!isRecording)}>
-                    {isRecording ? "Stop Recording" : "Start Recording"}
-                  </button>
-                </div>
-                <div>
-                  <label className="label" htmlFor="voice-transcript">Voice Transcript</label>
-                  <textarea id="voice-transcript" className="input" rows={3}
-                    placeholder="Type or paste your voice report here..."
-                    value={voiceTranscript} onChange={(e) => setVoiceTranscript(e.target.value)}
-                    style={{ resize: "none" }} />
-                </div>
-                {submitResult && (
-                  <div style={{ padding: "10px 14px", background: submitResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${submitResult.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, fontSize: 13, color: submitResult.ok ? "#166534" : "#b91c1c" }}>
-                    {submitResult.msg}
-                  </div>
-                )}
-                <motion.button className="btn btn-primary" disabled={submitting || !voiceTranscript.trim()}
-                  whileHover={{ scale: 1.01 }} onClick={handleVoiceSubmit} style={{ alignSelf: "flex-start", padding: "11px 24px" }}>
-                  {submitting ? "Analyzing..." : "Submit Voice Report"}
-                </motion.button>
-              </div>
-            )}
-
-            {/* CAMERA */}
-            {activeTab === "Camera" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                {!cameraStream && !cameraCapture && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <motion.button id="open-camera-btn" className="btn btn-primary" onClick={openCamera} style={{ width: "100%" }} whileHover={{ scale: 1.01 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" /><circle cx="12" cy="13" r="4" />
-                      </svg>
-                      Open Camera
-                    </motion.button>
-                    <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} style={{ width: "100%" }}>Upload from Gallery</button>
-                    <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageUpload} />
-                  </div>
-                )}
-                {cameraStream && !cameraCapture && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ borderRadius: 8, overflow: "hidden", background: "#000", position: "relative" }}>
-                      <video ref={videoRef} style={{ width: "100%", display: "block", maxHeight: 240, objectFit: "cover" }} autoPlay muted playsInline />
-                      <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(220,38,38,0.9)", color: "#fff", fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4 }}>LIVE</div>
-                    </div>
-                    <canvas ref={canvasRef} style={{ display: "none" }} />
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button id="capture-photo-btn" className="btn btn-primary" onClick={capturePhoto} style={{ flex: 1 }}>Capture Photo</button>
-                      <button className="btn btn-secondary" onClick={clearCamera}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-                {cameraCapture && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={cameraCapture} alt="Captured" style={{ width: "100%", objectFit: "cover", maxHeight: 240, borderRadius: 8, border: "1px solid var(--border)" }} />
-                    {submitResult && (
-                      <div style={{ padding: "10px 14px", background: submitResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${submitResult.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, fontSize: 13, color: submitResult.ok ? "#166534" : "#b91c1c" }}>
-                        {submitResult.msg}
+                  {cameraStream && !cameraCapture && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 320 }}>
+                      <div style={{ borderRadius: 8, overflow: "hidden", background: "#000", position: "relative" }}>
+                        <video ref={videoRef} style={{ width: "100%", display: "block", maxHeight: 240, objectFit: "cover" }} autoPlay muted playsInline />
+                        <div style={{ position: "absolute", top: 8, left: 8, background: "rgba(220,38,38,0.9)", color: "#fff", fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 4 }}>LIVE</div>
                       </div>
-                    )}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button id="submit-camera-photo-btn" className="btn btn-primary" style={{ flex: 1 }} disabled={submitting} onClick={handleCameraSubmit}>
-                        {submitting ? "Analyzing..." : "Submit Photo"}
-                      </button>
-                      <button className="btn btn-secondary" onClick={clearCamera}>Retake</button>
+                      <canvas ref={canvasRef} style={{ display: "none" }} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="button" className="btn btn-primary btn-sm" onClick={capturePhoto} style={{ flex: 1 }}>Capture Photo</button>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={clearCamera}>Cancel</button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {cameraCapture && (
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={cameraCapture} alt="Captured" style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={clearCamera}>Retake Photo</button>
+                    </div>
+                  )}
+
+                  {(isRecording || voiceTranscript) && (
+                    <div>
+                      <textarea className="input" rows={2}
+                        placeholder="Voice transcript will appear here..."
+                        value={voiceTranscript} onChange={(e) => setVoiceTranscript(e.target.value)}
+                        style={{ resize: "none" }} />
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+
+              {submitResult && (
+                <div style={{ padding: "10px 14px", background: submitResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${submitResult.ok ? "#bbf7d0" : "#fecaca"}`, borderRadius: 8, fontSize: 13, color: submitResult.ok ? "#166534" : "#b91c1c" }}>
+                  {submitResult.msg}
+                </div>
+              )}
+
+              <motion.button id="submit-incident-btn" type="submit" className="btn btn-primary"
+                disabled={submitting || !hasInput} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                style={{ alignSelf: "flex-start", padding: "11px 24px" }}>
+                {submitting ? "Analyzing..." : "Submit Report"}
+              </motion.button>
+            </form>
           </div>
         </motion.div>
 
